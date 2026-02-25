@@ -19,21 +19,21 @@ Designed for intermediate Roblox developers to handle client-server communicatio
 
 ## Installation
 
-Place `Network.lua` in a shared location (e.g. `ReplicatedStorage.Modules.Network`).
+Place `NetLink.lua` in a shared location (e.g. `ReplicatedStorage.Modules.NetLink`).
 
 Require it where needed:
 
 ```lua
-local Network = require(ReplicatedStorage.Modules.Network)
+local NetLink = require(ReplicatedStorage.Modules.NetLink)
 ```
 
 ---
 
 ## Lifecycle
 
-The network has a strict lifecycle: 
-1. `Network.Configure(...)`
-2. `Network.Load()`
+The NetLink has a strict lifecycle: 
+1. `NetLink.Configure(...)`
+2. `NetLink.Load()`
 3. Listen / Fire / Invoke
 
 `Load` must be called on the server before any client or server usage.
@@ -43,7 +43,7 @@ The network has a strict lifecycle:
 ## Server Usage
 ### Configuration
 ```lua
-Network.Configure({
+NetLink.Configure({
     RemoteEvents = { "Damage", "Notify" },
     RemoteFunctions = { "GetStats" },
     DebugMode = true,
@@ -52,18 +52,18 @@ Network.Configure({
 ```
 ### Loading
 ```lua
-Network.Load()
+NetLink.Load()
 ```
 ### Listening
 ```lua
-Network.Listen(self, "Damage", function(_, player, amount)
+NetLink.Listen(self, "Damage", function(_, player, amount)
     print(player, amount)
 end)
 ```
 ### Invoking
 ```lua
-Network.OnInvoke(self, "GetStats", function()
-    return Network.GetStats()
+NetLink.OnInvoke(self, "GetStats", function()
+    return NetLink.GetStats()
 end)
 ```
 
@@ -72,17 +72,17 @@ end)
 ## Client Usage
 ### Fire Event
 ```lua
-Network.FireServer("Damage", 10)
+NetLink.FireServer("Damage", 10)
 ```
 
 ### Invoke Function
 ```lua
-local result = Network.InvokeServer("GetStats", 2)
+local result = NetLink.InvokeServer("GetStats", 2)
 ```
 
 ### Async Invoke
 ```lua
-Network.InvokeServerAsync("GetStats", 2)
+NetLink.InvokeServerAsync("GetStats", 2)
     :andThen(function(result)
         print(result)
     end)
@@ -101,7 +101,7 @@ Middleware is validation-only.
  - Failures are silent unless `DebugMode` is enabled
  - Must be enabled in configuration
 ```lua
-Network.UseMiddleware(function(ctx)
+NetLink.UseMiddleware(function(ctx)
     if ctx.Name == "Damage" and ctx.Args[1] > 100 then
         return false
     end
@@ -115,7 +115,7 @@ end)
 
 Rate limiting is server-side only.
 ```lua
-Network.SetRateLimit("Damage", 5, 1)
+NetLink.SetRateLimit("Damage", 5, 1)
 ```
 Limits each player to 5 calls per second for the given remote.
 This is intended for abuse reduction, not exploit prevention.
@@ -127,13 +127,13 @@ This is intended for abuse reduction, not exploit prevention.
 BindableEvents and BindableFunctions are server-internal tools.
 
 They are useful for decoupling server systems without remotes.
-They are created and bound via the same Network API but are not replicated.
+They are created and bound via the same NetLink API but are not replicated.
 
 ---
 
 ## Stats
 ```lua
-local stats = Network.GetStats()
+local stats = NetLink.GetStats()
 ```
 Provides live counters for diagnostics and monitoring.
 
