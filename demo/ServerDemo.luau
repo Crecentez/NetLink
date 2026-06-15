@@ -1,16 +1,13 @@
 -- NetLinkDemoServer.lua
--- v1.0.0
--- © 2025 Crecentez / Lunoxi Studios
--- Licensed under the MIT License. See LICENSE file.
 
 local NetLink = require(game.ReplicatedStorage:WaitForChild("NetLink"))
 
 -- Configure NetLink
 NetLink.Configure({
-	RemoteEvents = {"TestEvent"},
-	RemoteFunctions = {"TestFunction"},
-	BindableEvents = {"TestBindableEvent"},
-	BindableFunctions = {"TestBindableFunction"},
+	RemoteEvents = { "TestEvent" },
+	RemoteFunctions = { "TestFunction" },
+	BindableEvents = { "TestBindableEvent" },
+	BindableFunctions = { "TestBindableFunction" },
 	DebugMode = true,
 	UseMiddleware = true,
 })

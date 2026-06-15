@@ -1,7 +1,8 @@
 -- NetLink.lua
--- v1.0.0
+-- v1.1.0
 -- © 2025 Crecentez / Lunoxi Studios
 -- Licensed under the MIT License. See LICENSE file.
+-- Documentation can be found at https://github.com/Crecentez/NetLink
 
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10,33 +11,37 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 
 export type StatsType = {
-	RemoteRecieves: {[string]: number},
-	PlayerRecieves: {[Player]: number},
+	RemoteRecieves: { [string]: number },
+	PlayerRecieves: { [Player]: number },
 	MiddlewareBlocks: number,
 	ActiveConnections: number,
-	TotalRemotes: number
+	TotalRemotes: number,
 }
 
 -- Module
 local NetLink = {}
 NetLink.__index = NetLink
 
-local Middleware: { (ctx: {
-	player: Player,
-	Name: string,
-	Args: {any}
-}) -> boolean} = {}
+local Middleware: {
+	(ctx: {
+		player: Player,
+		Name: string,
+		Args: { any },
+	}) -> boolean
+} = {}
 
 -- Constants
 local FOLDERS = {
 	RemoteEvents = "RemoteEvents",
 	RemoteFunctions = "RemoteFunctions",
+	UnreliableRemoteEvents = "UnreliableRemoteEvents",
 	BindableEvents = "BindableEvents",
-	BindableFunctions = "BindableFunctions"
+	BindableFunctions = "BindableFunctions",
 }
 
 local RemoteEvents = { "Example Remote Event" }
 local RemoteFunctions = { "Example Remote Function" }
+local UnreliableRemoteEvents = { "Example Unreliable Remote Event" }
 local BindableEvents = { "Example Bindable Event" }
 local BindableFunctions = { "Example Bindable Function" }
 
@@ -45,10 +50,10 @@ local Loaded: BoolValue?
 local Configured = false
 local DebugMode = false
 local UserMiddleware = false
-local ConnectionsByOwner: {[any]: {RBXScriptConnection}} = {}
+local ConnectionsByOwner: { [any]: { RBXScriptConnection } } = {}
 
-local RateLimits: {[string]: {Limit: number, Window: number}} = {}
-local RateBuckets: {[Player]: {[string]: {Count: number, ResetAt: number}}} = {}
+local RateLimits: { [string]: { Limit: number, Window: number } } = {}
+local RateBuckets: { [Player]: { [string]: { Count: number, ResetAt: number } } } = {}
 
 local NetLinkStats = {
 	RemoteRecieves = {},
@@ -85,36 +90,45 @@ local function getRemote(folderName: string, name: string, className: string)
 	local folder = ReplicatedStorage:FindFirstChild(folderName)
 	assert(folder, folderName .. " folder missing")
 
-	local remote = folder:FindFirstChild(name)
-	assert(remote and remote:IsA(className), (`{name} is not a valid {className}`))
+	local remote
+	if RunService:IsClient() then
+		remote = folder:WaitForChild(name, 10)
+	else
+		remote = folder:FindFirstChild(name)
+	end
+	assert(remote and remote:IsA(className), `{name} is not a valid {className}`)
 
 	return remote
 end
 
 local function trackConnection(owner: any, conn: RBXScriptConnection)
-	if not owner then return end
+	if not owner then
+		return
+	end
 	ConnectionsByOwner[owner] = ConnectionsByOwner[owner] or {}
 	table.insert(ConnectionsByOwner[owner], conn)
 end
 
 local function assert(condition: boolean, msg: string)
 	if condition == false or condition == nil then
-		error("[NetLink] \t::\t "..msg)
+		error("[NetLink] \t::\t " .. msg)
 	end
 end
 
 local function log(msg: string, doWarning: boolean?)
 	if doWarning then
-		warn("[NetLink] \t::\t "..msg)
+		warn("[NetLink] \t::\t " .. msg)
 		return
 	end
 	if DebugMode then
-		print("[NetLink] \t::\t "..msg)
+		print("[NetLink] \t::\t " .. msg)
 	end
 end
 
-local function ValidateMiddleware(ctx: {Player: Player, Name: string, Args: {any}}): boolean
-	if not UserMiddleware then return true end
+local function ValidateMiddleware(ctx: { Player: Player, Name: string, Args: { any } }): boolean
+	if not UserMiddleware then
+		return true
+	end
 	for _, mw in Middleware do
 		if mw(ctx) == false then
 			NetLinkStats.MiddlewareBlocks += 1
@@ -160,7 +174,9 @@ function Promise.new(executor)
 	self._failure = {}
 
 	local function resolve(value)
-		if self._state ~= "Pending" then return end
+		if self._state ~= "Pending" then
+			return
+		end
 		self._state = "Fulfilled"
 		self._value = value
 		for _, cb in self._success do
@@ -169,7 +185,9 @@ function Promise.new(executor)
 	end
 
 	local function reject(err)
-		if self._state ~= "Pending" then return end
+		if self._state ~= "Pending" then
+			return
+		end
 		self._state = "Rejected"
 		self._value = err
 		for _, cb in self._failure do
@@ -224,15 +242,23 @@ end
 	@param t.DebugMode boolean?
 	@param t.UseMiddleware boolean?
 ]]
-function NetLink.Configure(t: {RemoteEvents: {string}?, RemoteFunctions: {string}?, BindableEvents: {string}?, BindableFunctions: {string}?, DebugMode: boolean?, UseMiddleware: boolean?})
+function NetLink.Configure(t: {
+	RemoteEvents: { string }?,
+	RemoteFunctions: { string }?,
+	UnreliableRemoteEvents: { string }?,
+	BindableEvents: { string }?,
+	BindableFunctions: { string }?,
+	DebugMode: boolean?,
+	UseMiddleware: boolean?,
+})
 	assert(RunService:IsServer(), "SetRateLimit is server-only")
 	RemoteEvents = t.RemoteEvents or RemoteEvents
 	RemoteFunctions = t.RemoteFunctions or RemoteFunctions
+	UnreliableRemoteEvents = t.UnreliableRemoteEvents or UnreliableRemoteEvents
 	BindableEvents = t.BindableEvents or BindableEvents
 	BindableFunctions = t.BindableFunctions or BindableFunctions
 	DebugMode = t.DebugMode or false
 	UserMiddleware = t.UseMiddleware or false
-	Configured = true
 	log("Configured")
 end
 
@@ -251,6 +277,7 @@ function NetLink.Load()
 
 	local remoteFolder = getFolder(ReplicatedStorage, FOLDERS.RemoteEvents)
 	local functionFolder = getFolder(ReplicatedStorage, FOLDERS.RemoteFunctions)
+	local unreliableFolder = getFolder(ReplicatedStorage, FOLDERS.UnreliableRemoteEvents)
 
 	local bindableEventFolder = getFolder(ServerScriptService, FOLDERS.BindableEvents)
 	local bindableFunctionFolder = getFolder(ServerScriptService, FOLDERS.BindableFunctions)
@@ -264,6 +291,12 @@ function NetLink.Load()
 	for _, name in ipairs(RemoteFunctions) do
 		if not functionFolder:FindFirstChild(name) then
 			Instance.new("RemoteFunction", functionFolder).Name = name
+		end
+	end
+
+	for _, name in ipairs(UnreliableRemoteEvents) do
+		if not unreliableFolder:FindFirstChild(name) then
+			Instance.new("UnreliableRemoteEvent", unreliableFolder).Name = name
 		end
 	end
 
@@ -295,7 +328,7 @@ function NetLink.Load()
 			if not bucket or now >= bucket.ResetAt then
 				bucket = {
 					Count = 0,
-					ResetAt = now + rule.Window
+					ResetAt = now + rule.Window,
 				}
 				RateBuckets[player][ctx.Name] = bucket
 			end
@@ -321,6 +354,49 @@ function NetLink.Load()
 end
 
 --[[
+	Creates a remote or bindable instance at runtime.
+	Safe to call after Load(). Silently skips if the name already exists.
+
+	@param className "RemoteEvent"|"RemoteFunction"|"UnreliableRemoteEvent"|"BindableEvent"|"BindableFunction"
+	@param name string
+]]
+function NetLink.Create(
+	className: "RemoteEvent" | "RemoteFunction" | "UnreliableRemoteEvent" | "BindableEvent" | "BindableFunction",
+	name: string
+)
+	assert(RunService:IsServer(), "NetLink.Create is server-only")
+	assertLoaded()
+
+	local parent: Instance
+	local folderName: string
+
+	if className == "RemoteEvent" then
+		parent = ReplicatedStorage
+		folderName = FOLDERS.RemoteEvents
+	elseif className == "RemoteFunction" then
+		parent = ReplicatedStorage
+		folderName = FOLDERS.RemoteFunctions
+	elseif className == "UnreliableRemoteEvent" then
+		parent = ReplicatedStorage
+		folderName = FOLDERS.UnreliableRemoteEvents
+	elseif className == "BindableEvent" then
+		parent = ServerScriptService
+		folderName = FOLDERS.BindableEvents
+	elseif className == "BindableFunction" then
+		parent = ServerScriptService
+		folderName = FOLDERS.BindableFunctions
+	else
+		error(`[NetLink] :: Unsupported class: {className}`)
+	end
+
+	local folder = getFolder(parent, folderName)
+	if not folder:FindFirstChild(name) then
+		Instance.new(className, folder).Name = name
+		log(`Created {className}: {name}`)
+	end
+end
+
+--[[
 	Registers a middleware callback.
 
 	Middleware is validation-only.
@@ -332,8 +408,8 @@ end
 function NetLink.UseMiddleware(method: (ctx: {
 	Player: Player,
 	Name: string,
-	Args: {any}
-	}) -> boolean)
+	Args: { any },
+}) -> boolean)
 	assert(RunService:IsServer(), "SetRateLimit is server-only")
 	if not Middleware then
 		log("Middleware is disabled! Enable in config.", true)
@@ -346,7 +422,9 @@ end
 	Blocks until the network has finished loading.
 ]]
 function NetLink.WaitTillLoaded()
-	repeat task.wait() until script:FindFirstChild("Loaded") and script["Loaded"].Value == true
+	repeat
+		task.wait()
+	until script:FindFirstChild("Loaded") and script["Loaded"].Value == true
 end
 
 --[[
@@ -360,11 +438,15 @@ function NetLink.GetStats(): StatsType
 	s.TotalRemotes = 0
 	local eventFolder = getFolder(ReplicatedStorage, FOLDERS.RemoteEvents)
 	local functionFolder = getFolder(ReplicatedStorage, FOLDERS.RemoteFunctions)
+	local unreliableFolder = getFolder(ReplicatedStorage, FOLDERS.UnreliableRemoteEvents)
 	if eventFolder then
 		s.TotalRemotes += #eventFolder:GetChildren()
 	end
 	if functionFolder then
 		s.TotalRemotes += #functionFolder:GetChildren()
+	end
+	if unreliableFolder then
+		s.TotalRemotes += #unreliableFolder:GetChildren()
 	end
 	s.ActiveConnections = #ConnectionsByOwner or 0
 	return s
@@ -382,7 +464,7 @@ function NetLink.SetRateLimit(remoteName: string, limit: number, window: number)
 	assert(limit > 0 and window > 0, "Invalid rate limit values")
 	RateLimits[remoteName] = {
 		Limit = limit,
-		Window = window
+		Window = window,
 	}
 	log(`Rate limit set for {remoteName}: {limit}/{window}s`)
 end
@@ -394,7 +476,9 @@ end
 ]]
 function NetLink.DisconnectAll(owner: any)
 	local list = ConnectionsByOwner[owner]
-	if not list then return end
+	if not list then
+		return
+	end
 	for _, conn in ipairs(list) do
 		if conn.Connected then
 			conn:Disconnect()
@@ -421,7 +505,9 @@ function NetLink.Listen(owner: any, eventName: string, method)
 		conn = remote.OnServerEvent:Connect(function(player, ...)
 			AddRemoteRecieves(eventName)
 			AddPlayerRecieves(player)
-			if not ValidateMiddleware{Player = player, Name = eventName, Args = {...}} then return end
+			if not ValidateMiddleware({ Player = player, Name = eventName, Args = { ... } }) then
+				return
+			end
 			method(owner, player, ...)
 		end)
 	else
@@ -453,7 +539,9 @@ function NetLink.OnInvoke(owner: any, functionName: string, method)
 		remote.OnServerInvoke = function(player, ...)
 			AddRemoteRecieves(functionName)
 			AddPlayerRecieves(player)
-			if not ValidateMiddleware{Player = player, Name = functionName, Args = {...}} then return end
+			if not ValidateMiddleware({ Player = player, Name = functionName, Args = { ... } }) then
+				return
+			end
 			return method(owner, player, ...)
 		end
 	else
@@ -482,7 +570,9 @@ function NetLink.ListenOnce(owner: any, eventName: string, method)
 		conn = remote.OnServerEvent:Once(function(player, ...)
 			AddRemoteRecieves(eventName)
 			AddPlayerRecieves(player)
-			if not ValidateMiddleware{Player = player, Name = eventName, Args = {...}} then return end
+			if not ValidateMiddleware({ Player = player, Name = eventName, Args = { ... } }) then
+				return
+			end
 			method(owner, player, ...)
 		end)
 	else
@@ -513,7 +603,9 @@ function NetLink.OnInvokeOnce(owner: any, functionName: string, method)
 		remote.OnServerInvoke = function(player, ...)
 			AddRemoteRecieves(functionName)
 			AddPlayerRecieves(player)
-			if not ValidateMiddleware{Player = player, Name = functionName, Args = {...}} then return end
+			if not ValidateMiddleware({ Player = player, Name = functionName, Args = { ... } }) then
+				return
+			end
 			remote.OnServerInvoke = nil
 			return method(owner, player, ...)
 		end
@@ -605,7 +697,9 @@ function NetLink.FireExcept(excludedPlayer: Player, eventName: string, ...)
 	assert(excludedPlayer:IsA("Player"), "First argument must be Player")
 	local remote = getRemote(FOLDERS.RemoteEvents, eventName, "RemoteEvent")
 	for i, plr: Player in pairs(Players:GetPlayers()) do
-		if plr == excludedPlayer then continue end
+		if plr == excludedPlayer then
+			continue
+		end
 		remote:FireClient(plr, ...)
 	end
 end
@@ -616,7 +710,7 @@ end
 	@param players {Player}
 	@param eventName string
 ]]
-function NetLink.FireBatch(players: {Player}, eventName: string, ...)
+function NetLink.FireBatch(players: { Player }, eventName: string, ...)
 	assert(RunService:IsServer(), "FireClient can only be called on server")
 	assert(typeof(players) == "table", "FireBatch expects a table of Players")
 	local remote = getRemote(FOLDERS.RemoteEvents, eventName, "RemoteEvent")
@@ -643,7 +737,9 @@ function NetLink.InvokeClient(functionName: string, timeout: number?, player: Pl
 		local result
 
 		task.spawn(function()
-			result = getRemote(FOLDERS.RemoteFunctions, functionName, "RemoteFunction"):InvokeClient(table.unpack(args, 1, args.n))
+			result = getRemote(FOLDERS.RemoteFunctions, functionName, "RemoteFunction"):InvokeClient(
+				table.unpack(args, 1, args.n)
+			)
 			finished = true
 		end)
 
@@ -676,7 +772,9 @@ function NetLink.InvokeClientAsync(functionName: string, timeout: number, ...)
 		task.spawn(function()
 			local ok, result = pcall(NetLink.InvokeClient, functionName, nil, table.unpack(args, 1, args.n))
 
-			if finished then return end
+			if finished then
+				return
+			end
 			finished = true
 
 			if ok then
@@ -687,11 +785,146 @@ function NetLink.InvokeClientAsync(functionName: string, timeout: number, ...)
 		end)
 
 		task.delay(timeout, function()
-			if finished then return end
+			if finished then
+				return
+			end
 			finished = true
-			reject("InvokeClientAsync timed out after "..timeout.."s")
+			reject("InvokeClientAsync timed out after " .. timeout .. "s")
 		end)
 	end)
+end
+
+--[[
+	Listens for an UnreliableRemoteEvent.
+
+	@param owner any
+	@param eventName string
+	@param method (owner:any, player:Player, ...any) -> ()
+]]
+function NetLink.ListenUnreliable(owner: any, eventName: string, method)
+	assertLoaded()
+	assert(typeof(method) == "function", "method must be a function")
+
+	local remote = getRemote(FOLDERS.UnreliableRemoteEvents, eventName, "UnreliableRemoteEvent")
+
+	local conn
+	if RunService:IsServer() then
+		conn = remote.OnServerEvent:Connect(function(player, ...)
+			AddRemoteRecieves(eventName)
+			AddPlayerRecieves(player)
+			if not ValidateMiddleware({ Player = player, Name = eventName, Args = { ... } }) then
+				return
+			end
+			method(owner, player, ...)
+		end)
+	else
+		conn = remote.OnClientEvent:Connect(function(...)
+			AddRemoteRecieves(eventName)
+			AddPlayerRecieves(game.Players.LocalPlayer)
+			method(owner, ...)
+		end)
+	end
+
+	trackConnection(owner, conn)
+	return conn
+end
+
+--[[
+	Listens for an UnreliableRemoteEvent once.
+
+	@param owner any
+	@param eventName string
+	@param method (owner:any, player:Player, ...any) -> ()
+]]
+function NetLink.ListenUnreliableOnce(owner: any, eventName: string, method)
+	assertLoaded()
+	assert(typeof(method) == "function", "method must be a function")
+
+	local remote = getRemote(FOLDERS.UnreliableRemoteEvents, eventName, "UnreliableRemoteEvent")
+	local conn
+	if RunService:IsServer() then
+		conn = remote.OnServerEvent:Once(function(player, ...)
+			AddRemoteRecieves(eventName)
+			AddPlayerRecieves(player)
+			if not ValidateMiddleware({ Player = player, Name = eventName, Args = { ... } }) then
+				return
+			end
+			method(owner, player, ...)
+		end)
+	else
+		conn = remote.OnClientEvent:Once(function(...)
+			AddRemoteRecieves(eventName)
+			AddPlayerRecieves(game.Players.LocalPlayer)
+			method(owner, ...)
+		end)
+	end
+
+	trackConnection(owner, conn)
+	return conn
+end
+
+--[[
+	Fires an UnreliableRemoteEvent to a single client.
+
+	@param player Player
+	@param eventName string
+]]
+function NetLink.FireClientUnreliable(player: Player, eventName: string, ...)
+	assert(RunService:IsServer(), "FireClientUnreliable can only be called on server")
+	assert(player:IsA("Player"), "First argument must be Player")
+	getRemote(FOLDERS.UnreliableRemoteEvents, eventName, "UnreliableRemoteEvent"):FireClient(player, ...)
+end
+
+--[[
+	Fires an UnreliableRemoteEvent to all clients.
+
+	@param eventName string
+]]
+function NetLink.FireAllUnreliable(eventName: string, ...)
+	assert(RunService:IsServer(), "FireAllUnreliable is server-only")
+	getRemote(FOLDERS.UnreliableRemoteEvents, eventName, "UnreliableRemoteEvent"):FireAllClients(...)
+end
+
+--[[
+	Fires an UnreliableRemoteEvent to all clients except one.
+
+	@param excludedPlayer Player
+	@param eventName string
+]]
+function NetLink.FireExceptUnreliable(excludedPlayer: Player, eventName: string, ...)
+	assert(RunService:IsServer(), "FireExceptUnreliable can only be called on server")
+	assert(excludedPlayer:IsA("Player"), "First argument must be Player")
+	local remote = getRemote(FOLDERS.UnreliableRemoteEvents, eventName, "UnreliableRemoteEvent")
+	for _, plr: Player in pairs(Players:GetPlayers()) do
+		if plr == excludedPlayer then
+			continue
+		end
+		remote:FireClient(plr, ...)
+	end
+end
+
+--[[
+	Fires an UnreliableRemoteEvent to a list of players.
+
+	@param players {Player}
+	@param eventName string
+]]
+function NetLink.FireBatchUnreliable(players: { Player }, eventName: string, ...)
+	assert(RunService:IsServer(), "FireBatchUnreliable can only be called on server")
+	assert(typeof(players) == "table", "FireBatchUnreliable expects a table of Players")
+	local remote = getRemote(FOLDERS.UnreliableRemoteEvents, eventName, "UnreliableRemoteEvent")
+	for idx, plr: Player in ipairs(players) do
+		assert(typeof(plr) == "Instance" and plr:IsA("Player"), `FireBatchUnreliable expected Player at index {idx}`)
+		remote:FireClient(plr, ...)
+	end
+end
+
+--[[
+	Fires an UnreliableRemoteEvent to the server.
+]]
+function NetLink.FireServerUnreliable(eventName: string, ...)
+	assert(RunService:IsClient(), "FireServerUnreliable can only be called on client")
+	getRemote(FOLDERS.UnreliableRemoteEvents, eventName, "UnreliableRemoteEvent"):FireServer(...)
 end
 
 --[[
@@ -717,7 +950,9 @@ function NetLink.InvokeServer(functionName: string, timeout: number?, ...)
 		local result
 
 		task.spawn(function()
-			result = getRemote(FOLDERS.RemoteFunctions, functionName, "RemoteFunction"):InvokeServer(table.unpack(args, 1, args.n))
+			result = getRemote(FOLDERS.RemoteFunctions, functionName, "RemoteFunction"):InvokeServer(
+				table.unpack(args, 1, args.n)
+			)
 			finished = true
 		end)
 
@@ -750,7 +985,9 @@ function NetLink.InvokeServerAsync(functionName: string, timeout: number, ...)
 		task.spawn(function()
 			local ok, result = pcall(NetLink.InvokeServer, functionName, nil, table.unpack(args, 1, args.n))
 
-			if finished then return end
+			if finished then
+				return
+			end
 			finished = true
 
 			if ok then
@@ -761,9 +998,11 @@ function NetLink.InvokeServerAsync(functionName: string, timeout: number, ...)
 		end)
 
 		task.delay(timeout, function()
-			if finished then return end
+			if finished then
+				return
+			end
 			finished = true
-			reject("InvokeServerAsync timed out after "..timeout.."s")
+			reject("InvokeServerAsync timed out after " .. timeout .. "s")
 		end)
 	end)
 end

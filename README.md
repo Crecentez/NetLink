@@ -14,6 +14,16 @@ Designed for intermediate Roblox developers to handle client-server communicatio
 - Async invoke support via internal Promise
 - Connection ownership and cleanup
 - Server-internal BindableEvent / BindableFunction support
+- Unreliable events
+- Runtime event creation
+
+---
+
+## Latest Changes (V 1.1.0)
+
+ - Added unreliable event support
+ - Added runtime event/function creation
+ - Added support for wally
 
 ---
 
@@ -59,6 +69,9 @@ NetLink.Load()
 NetLink.Listen(self, "Damage", function(_, player, amount)
     print(player, amount)
 end)
+NetLink.ListenUnreliable(self, "Fire", function(_, player, direction)
+    print(`{player.Name} is trying to fire at direction {direction}`)
+end)
 ```
 ### Invoking
 ```lua
@@ -73,6 +86,7 @@ end)
 ### Fire Event
 ```lua
 NetLink.FireServer("Damage", 10)
+NetLink.FireServerUnreliable("Fire", Vector3.new(1, 1, 1))
 ```
 
 ### Invoke Function
@@ -141,7 +155,7 @@ Provides live counters for diagnostics and monitoring.
 
 ## Stability
 
-Public API is stable as of v1.0.0
+Public API is stable as of v1.1.0
 Internal implementation is not part of the API and may change
 
 ---

@@ -1,7 +1,4 @@
 -- NetLinkDemoClient.lua
--- v1.0.0
--- © 2025 Crecentez / Lunoxi Studios
--- Licensed under the MIT License. See LICENSE file.
 
 local NetLink = require(game.ReplicatedStorage:WaitForChild("NetLink"))
 
