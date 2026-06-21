@@ -218,7 +218,7 @@ end
 
 	@param method (err:any) -> ()
 ]]
-function Promise:catch(method)
+function Promise:catch(method: (err: any) -> ())
 	if self._state == "Rejected" then
 		task.spawn(method, self._value)
 	elseif self._state == "Pending" then
